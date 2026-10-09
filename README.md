@@ -99,7 +99,8 @@ GitHub CI runs the same suite with independent connections to a PostgreSQL 17 se
 - Configure approved venue rates, hours, media, privacy/cancellation/payment policies.
 - Build the operational admin calendar/settings/exception UI.
 - Add media uploads/video cards, custom concierge coverage, receipts and notification delivery jobs.
-- Complete browser/mobile/accessibility checks and native PostgreSQL CI.
+- Complete browser/mobile/accessibility checks. Native PostgreSQL CI passes; keep that gate enabled.
+- Resolve or assess remaining Vinext transitive dependency audit findings before production (see docs/BUILD_STATUS.md).
 
 No Cloudflare worker, database account or live site has been provisioned by this commit. The UI currently uses generated service placeholders until genuine images are supplied.
 
