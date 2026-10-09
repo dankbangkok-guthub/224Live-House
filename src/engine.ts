@@ -342,12 +342,13 @@ export class VenueEngine {
     for(const u of pool.units) {
       if(!/^[a-z0-9-]{1,60}$/.test(u.id)) throw new DomainError('invalid_unit',400);
       if(pool.kind==='concierge' && !u.shifts) throw new DomainError('shift_required',400);
-      if(u.shifts) scheduleContains(u.shifts,new Date(),new Date(Date.now()+1));
+      if(u.shifts) validateSchedule(u.shifts);
     }
     return transaction(this.pool,async db=>{
       // Add-only provisioning. Do not mutate existing staff shifts or stock silently.
       await db.query('INSERT INTO resource_pools(id,kind,name) VALUES($1,$2,$3) ON CONFLICT(id) DO NOTHING',[pool.id,pool.kind,pool.name]);
       await this.lockPools(db,[pool.id]);
+      if((await db.query('SELECT kind FROM resource_pools WHERE id=$1',[pool.id])).rows[0].kind!==pool.kind)throw new DomainError('pool_kind_mismatch',400);
       for(const u of pool.units) await db.query('INSERT INTO resource_units(id,pool_id,shifts) VALUES($1,$2,$3)',[u.id,pool.id,u.shifts??null]);
       await audit(db,actor,'pool_units_added',pool.id,{units:pool.units.map(u=>u.id)});
       return {id:pool.id};

@@ -74,6 +74,7 @@ export default function Page() {
         </section>
         <section className="panel"><h2><b>02</b> Make it yours</h2><div className="service-grid">
           {catalog.services.filter((s:any)=>s.config.allowedSpaces.includes(spaceId)).map((s:any)=><article className="service" key={s.id}>
+            {s.config.video&&<video controls preload="none" poster={s.config.poster||s.config.image} aria-label={s.name+' video'} src={s.config.video}/>}
             {s.config.image?<img src={s.config.image} alt={s.name} loading="lazy" onError={e=>{e.currentTarget.style.display='none';}}/>:<div className="service-art" aria-hidden="true">{s.name.slice(0,1)}</div>}
             <h3>{s.name}</h3><p>{s.config.description??'Optional event service'}</p><p>{s.config.priceType==='request_quote'?'Request approval':money(s.config.priceSatang)+(s.config.priceType==='hour'?' / hour':'')}</p>
             {s.config.priceType!=='request_quote'&&<label>Quantity<input type="number" min="0" max={s.config.max} value={selected[s.id]??0} onChange={e=>{invalidate();setSelected({...selected,[s.id]:Number(e.target.value)});}}/></label>}

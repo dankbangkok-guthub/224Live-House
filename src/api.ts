@@ -1,19 +1,16 @@
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { database } from './database';
 import { VenueEngine } from './engine';
 import { DomainError, localInstant } from './domain';
 import { verifySandboxEvent } from './payments';
 
+import { adminConfigured, adminIdentity, requireRole } from './auth';
+import { Operations } from './operations';
+
 let singleton: ReturnType<typeof database>|undefined;
 function engine() {
   singleton??=database(process.env.DATABASE_URL??'');
   return new VenueEngine(singleton.pool);
-}
-function admin(request:Request) {
-  const configured=process.env.ADMIN_API_TOKEN??'';
-  const candidate=request.headers.get('authorization')?.replace(/^Bearer /,'')??'';
-  if(configured.length<32 || candidate.length!==configured.length ||
-    !timingSafeEqual(Buffer.from(configured),Buffer.from(candidate))) throw new DomainError('unauthorized',401);
 }
 function access(request:Request,id:string) {
   const h=request.headers.get('x-booking-token');
@@ -33,8 +30,8 @@ export async function api(request:Request):Promise<Response> {
   const url=new URL(request.url), path=url.pathname.replace(/\/$/,'');
   const send=(data:unknown,status=200,headers:Record<string,string>={})=>Response.json(data,{status,headers:{'Cache-Control':'no-store',...headers}});
   try {
-    if(path==='/api/health') return send({service:'224-live-house',mode:sandboxEnabled()?'development-sandbox':'configuration-required'});
-    if(!sandboxEnabled()) throw new DomainError('production_not_configured',503);
+    if(path==='/api/health') return send({service:'224-live-house',mode:sandboxEnabled()?'development-sandbox':'configuration-required',adminMode:adminConfigured()?'access':'configuration-required'});
+    if(!sandboxEnabled() && !(path.startsWith('/api/admin/')&&adminConfigured())) throw new DomainError('production_not_configured',503);
     const origin=process.env.APP_ORIGIN??url.origin;
     if(request.method!=='GET' && path!=='/api/payments/webhook/sandbox') {
       if(request.headers.get('origin')!==origin) throw new DomainError('invalid_origin',403);
@@ -90,20 +87,35 @@ export async function api(request:Request):Promise<Response> {
       return send(await e.verifiedPayment(event));
     }
     if(path.startsWith('/api/admin/')) {
-      admin(request);
+      const who=await adminIdentity(request,e.pool),ops=new Operations(e.pool);
+      if(request.method==='GET'&&path==='/api/admin/me')return send(who);
+      if(request.method==='GET'&&path==='/api/admin/assignments')return send(await ops.assignments(who));
+      if(request.method==='POST'&&path==='/api/admin/tasks')return send(await ops.task(await body(),who));
+      requireRole(who,['owner','manager']);
+      if(request.method==='GET'&&path==='/api/admin/catalog')return send(await ops.catalog(who));
+      if(request.method==='GET'&&path==='/api/admin/staff')return send(await ops.staff(who));
+      if(request.method==='GET'&&path==='/api/admin/payments')return send(await ops.payments(who));
+      if(request.method==='GET'&&path==='/api/admin/accounts')return send(await ops.accounts(who));
+      if(request.method==='GET'&&path==='/api/admin/audit')return send(await ops.audit(who));
       if(request.method==='GET' && path==='/api/admin/schedule')return send(await e.scheduleOverview(url.searchParams.get('spaceId')??'',url.searchParams.get('date')??''));
       if(request.method==='GET' && path==='/api/admin/spaces')return send((await e.pool.query('SELECT id,name,capacity,config,version,published FROM spaces ORDER BY name')).rows);
       if(request.method==='GET' && path==='/api/admin/bookings') {
-        return send((await e.pool.query('SELECT id,code,space_id,start_at,end_at,status,quote FROM bookings ORDER BY start_at LIMIT 200')).rows);
+        return send((await e.pool.query('SELECT id,code,space_id,start_at,end_at,status,quote,customer FROM bookings ORDER BY start_at LIMIT 200')).rows);
       }
       if(request.method==='POST') {
         const input=await body();
-        if(path==='/api/admin/schedule')return send(await e.updateSchedule(input.spaceId,input.schedule,input.expectedVersion,'admin'));
-        if(path==='/api/admin/blackouts/release')return send(await e.releaseBlackout(input.spaceId,input.id,'admin'));
-        if(path==='/api/admin/spaces')return send(await e.configureSpace(input,'admin'));
-        if(path==='/api/admin/services')return send(await e.configureService(input,'admin'));
-        if(path==='/api/admin/resources')return send(await e.provisionPool(input,'admin'));
-        if(path==='/api/admin/blackouts')return send(await e.blackout(input.spaceId,input.start,input.end,input.reason,'admin'));
+        if(path==='/api/admin/staff')return send(await ops.updateUnit(input,who));
+        if(path==='/api/admin/assignments')return send(await ops.assign(input,who));
+        if(path==='/api/admin/payment-reviews')return send(await ops.paymentReview(input,who));
+        if(path==='/api/admin/accounts')return send(await ops.account(input,who));
+        if(path==='/api/admin/spaces')requireRole(who,['owner']);
+        if(path==='/api/admin/expire'&&!sandboxEnabled())throw new DomainError('sandbox_only',403);
+        if(path==='/api/admin/schedule')return send(await e.updateSchedule(input.spaceId,input.schedule,input.expectedVersion,who.email));
+        if(path==='/api/admin/blackouts/release')return send(await e.releaseBlackout(input.spaceId,input.id,who.email));
+        if(path==='/api/admin/spaces')return send(await e.configureSpace(input,who.email));
+        if(path==='/api/admin/services')return send(await e.configureService(input,who.email));
+        if(path==='/api/admin/resources')return send(await e.provisionPool(input,who.email));
+        if(path==='/api/admin/blackouts')return send(await e.blackout(input.spaceId,input.start,input.end,input.reason,who.email));
         if(path==='/api/admin/expire')return send(await e.expireSandboxHolds());
       }
     }

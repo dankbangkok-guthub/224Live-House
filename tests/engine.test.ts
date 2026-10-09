@@ -5,6 +5,8 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { database } from '../src/database';
 import { VenueEngine } from '../src/engine';
 import type { SpaceConfig } from '../src/domain';
+import { Operations } from '../src/operations';
+import { accountIdentity } from '../src/auth';
 import { startTestDatabase } from './postgres';
 
 let stop:()=>Promise<void>,e:VenueEngine;
@@ -17,11 +19,12 @@ before(async()=>{
   const db=await startTestDatabase();stop=db.stop;
   const pool=db.pool??database(db.url!).pool;e=new VenueEngine(pool,()=>now);
   await pool.query(await readFile(new URL('../db/001_engine.sql',import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../db/002_admin.sql',import.meta.url),'utf8'));
 });
 after(async()=>{if(e)await e.pool.end();if(stop)await stop();});
 beforeEach(async()=>{
   now=new Date('2030-01-01T00:00Z');
-  await e.pool.query('TRUNCATE audit_logs,outbox,idempotency,payment_events,payments,allocations,extensions,bookings,services,resource_units,resource_pools,spaces CASCADE');
+  await e.pool.query('TRUNCATE admin_accounts,fulfillment,payment_reviews,audit_logs,outbox,idempotency,payment_events,payments,allocations,extensions,bookings,services,resource_units,resource_pools,spaces CASCADE');
   for(const id of ['studio','lounge'])await e.configureSpace({id,name:id,capacity:20,config,published:true},'test');
 });
 function token(){return randomBytes(32).toString('hex');}
@@ -227,4 +230,53 @@ test('releasing a blackout retains history, is idempotent and cannot release a b
   const {b}=await hold();
   const allocation=(await e.pool.query('SELECT id FROM allocations WHERE booking_id=$1',[b.id])).rows[0];
   await assert.rejects(()=>e.releaseBlackout('studio',allocation.id,'manager'),/blackout_not_found/);
+});
+
+const owner={email:'owner@example.com',role:'owner' as const,unitId:null};
+const member={email:'staff@example.com',role:'staff' as const,unitId:'person-one'};
+test('staff sees only assigned work and cannot inspect payments or edit accounts',async()=>{
+ await concierge();await hold({...input,services:[{id:'assistant',quantity:1}]});const ops=new Operations(e.pool);
+ const tasks=await ops.assignments(member);assert.equal(tasks.length,1);assert.equal('quote' in tasks[0],false);assert.equal('customer' in tasks[0],false);
+ assert.equal((await ops.assignments({...member,unitId:'other-person'})).length,0);
+ await assert.rejects(()=>ops.payments(member),/forbidden/);
+ await assert.rejects(()=>ops.account({email:'new@example.com',role:'owner',unitId:null,active:true},member),/forbidden/);
+ await assert.rejects(()=>ops.task({id:tasks[0].id,status:'completed',notes:''},{...member,unitId:'other-person'}),/assignment_not_found/);
+ await ops.task({id:tasks[0].id,status:'needs_help',notes:'Microphone needs attention'},member);
+ assert.equal((await ops.assignments(member))[0].fulfillment_status,'needs_help');
+});
+test('concierge reassignments check capacity and pending extension rollback',async()=>{
+ await concierge();await e.provisionPool({id:'staff',name:'staff',kind:'concierge',units:[{id:'person-two',shifts:schedule}]},'test');
+ const a=await hold({...input,services:[{id:'assistant',quantity:1}]}),b=await hold({...input,spaceId:'lounge',services:[{id:'assistant',quantity:1}]});
+ const ops=new Operations(e.pool),tasks=await ops.assignments(owner),task=tasks.find(v=>v.code===a.b.code)!;
+ await assert.rejects(()=>ops.assign({id:task.id,unitId:'person-two'},owner),/capacity_conflict/);
+ // A free staff member may be assigned at another event time.
+ await e.provisionPool({id:'staff',name:'staff',kind:'concierge',units:[{id:'person-three',shifts:schedule}]},'test');
+ await ops.assign({id:task.id,unitId:'person-three'},owner);
+ await paid(a.b,a.t);await e.requestExtension(a.b.id,a.t,1,randomUUID(),'test-1');
+ await assert.rejects(()=>ops.assign({id:task.id,unitId:'person-one'},owner),/extension_pending/);
+ assert.equal((await e.status(b.b.id,b.t)).status,'holding');
+});
+test('shift changes report operational conflicts without releasing staff reservations',async()=>{
+ await concierge();await hold({...input,services:[{id:'assistant',quantity:1}]});const ops=new Operations(e.pool);
+ const result=await ops.updateUnit({id:'person-one',active:false,shifts:{weekly:{}}},owner);
+ assert.equal(result.reviewAssignments.length,1);
+ assert.equal((await e.pool.query("SELECT count(*) FROM allocations WHERE unit_id='person-one' AND released_at IS NULL")).rows[0].count,'1');
+ await assert.rejects(()=>hold({...input,spaceId:'lounge',services:[{id:'assistant',quantity:1}]}),/capacity_conflict/);
+});
+test('payment reviews never alter financial state or reservation capacity',async()=>{
+ const {b,t}=await hold(),{c}=await checkout(b,t),ops=new Operations(e.pool);
+ await ops.paymentReview({id:c.paymentId,status:'resolved',notes:'Provider investigation requested'},owner);
+ assert.equal((await ops.payments(owner))[0].status,'pending');
+ assert.equal((await e.status(b.id,t)).status,'holding');
+ assert.equal((await e.pool.query('SELECT count(*) FROM allocations WHERE released_at IS NULL')).rows[0].count,'1');
+});
+test('account binding, revocation and last-owner protection are enforced in database',async()=>{
+ await concierge();const ops=new Operations(e.pool);await ops.account({email:owner.email,role:'owner',unitId:null,active:true},owner);
+ assert.equal((await accountIdentity(e.pool,{email:owner.email,subject:'verified-sub',issuedAt:1})).role,'owner');
+ await assert.rejects(()=>accountIdentity(e.pool,{email:owner.email,subject:'wrong-sub',issuedAt:1}),/account_disabled/);
+ await assert.rejects(()=>ops.account({email:owner.email,role:'manager',unitId:null,active:true},owner),/last_owner/);
+ await ops.account({email:member.email,role:'staff',unitId:member.unitId,active:true},owner);
+ await accountIdentity(e.pool,{email:member.email,subject:'staff-sub',issuedAt:1});
+ await ops.account({email:member.email,role:'staff',unitId:member.unitId,active:false},owner);
+ await assert.rejects(()=>accountIdentity(e.pool,{email:member.email,subject:'staff-sub',issuedAt:9999999999}),/account_disabled/);
 });

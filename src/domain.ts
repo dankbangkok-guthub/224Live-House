@@ -17,7 +17,7 @@ export type ServiceConfig = {
   priceSatang: number; min: number; max: number;
   setupMinutes: number; cleanupMinutes: number; leadMinutes: number;
   allowedSpaces: string[]; schedule?: Schedule;
-  image?: string; description?: string;
+  image?: string; video?: string; poster?: string; description?: string;
 };
 export type Space = { id: string; name: string; capacity: number; version: number; config: SpaceConfig };
 export type Service = { id: string; name: string; version: number; pool_id: string | null; config: ServiceConfig };
@@ -107,6 +107,10 @@ export function validateService(config: ServiceConfig) {
   integer(config.priceSatang,0); integer(config.min,1,100); integer(config.max,config.min,100);
   integer(config.setupMinutes,0,1440); integer(config.cleanupMinutes,0,1440); integer(config.leadMinutes,0);
   if (!Array.isArray(config.allowedSpaces)) throw new DomainError('invalid_service_spaces',400);
+  if(config.description!==undefined&&(typeof config.description!=='string'||config.description.length>3000))throw new DomainError('invalid_description',400);
+  for(const value of [config.image,config.video,config.poster])if(value!==undefined&&value!==''){
+    if(typeof value!=='string'||value.length>2000||(!/^https:\/\//.test(value)&&!/^\/(?!\/)/.test(value)))throw new DomainError('invalid_media_url',400);
+  }
   if (config.schedule) validateSchedule(config.schedule);
 }
 export function quote(space: Space, services: Service[], input: RequestInput, now = new Date()): Quote {

@@ -19,19 +19,22 @@
     "start:vinext": "wrangler dev --config dist/server/wrangler.json",
     "deploy:vinext": "npm run build:cloudflare && wrangler deploy --config dist/server/wrangler.json",
     "build:cloudflare": "CLOUDFLARE_BUILD=1 vite build",
-    "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy --config dist/server/wrangler.json"
+    "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy --config dist/server/wrangler.json",
+    "db:owner": "node --import tsx scripts/owner.ts"
   },
   "dependencies": {
+    "@vinext/cloudflare": "latest",
     "drizzle-orm": "0.45.2",
+    "jose": "^6.2.12",
     "next": "^16.4.0",
     "pg": "8.16.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-server-dom-webpack": "^19.2.8",
-    "vinext": "^1.1.0",
-    "@vinext/cloudflare": "latest"
+    "vinext": "^1.1.0"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "1",
     "@electric-sql/pglite": "^0.5.8",
     "@types/node": "22.19.19",
     "@types/pg": "8.15.5",
@@ -42,7 +45,6 @@
     "tsx": "4.20.6",
     "typescript": "5.9.3",
     "vite": "^8.3.4",
-    "@cloudflare/vite-plugin": "1",
     "wrangler": "latest"
   }
 }

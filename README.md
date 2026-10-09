@@ -113,3 +113,7 @@ Worker target: `224-live-house`. See [Cloudflare deployment](docs/CLOUDFLARE_DEP
 ### Schedule administration
 
 Open `/admin` in the development sandbox and connect using the configured development admin token. Edit weekday windows (including next-day closing), add date overrides, inspect buffered occupied intervals, and create/release blackout periods. Reload saved hours after a stale-revision error. Saving hours preserves current prices and existing bookings; affected booking codes are reported for manager review. Production access remains disabled until the database and individual MFA-protected admin accounts are integrated. See `docs/BUILD_STATUS.md` for remaining operations work.
+
+### Phase 2 operations and MFA
+
+`/admin/operations` adds venue/rate configuration, service catalog and published media URLs, staff/inventory capacity, weekly/overnight concierge shifts, conflict-checked assignments, fulfillment notes, bookings, payment review records, owner-managed team roles and audit history. Production admin now has a separate activation gate from customer sandbox checkout. Cloudflare Access JWTs are verified server-side; active accounts and role permissions are checked in PostgreSQL. Follow [admin activation](docs/ADMIN_ACTIVATION.md) to provision the database and MFA policy. No live secrets or accounts are supplied by this repository.
