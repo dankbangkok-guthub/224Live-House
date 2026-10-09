@@ -5,7 +5,7 @@ try{
   await transaction(pool,async db=>{
     await db.query("SELECT pg_advisory_xact_lock(hashtextextended('224:migrations',0))");
     await db.query('CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())');
-    for(const name of ['001_engine','002_admin','003_notifications']) {
+    for(const name of ['001_engine','002_admin','003_notifications','004_email_delivery']) {
     if(!(await db.query('SELECT name FROM schema_migrations WHERE name=$1',[name])).rows.length){
       await db.query(await readFile(new URL('../db/'+name+'.sql',import.meta.url),'utf8'));
       await db.query('INSERT INTO schema_migrations(name) VALUES($1)',[name]);

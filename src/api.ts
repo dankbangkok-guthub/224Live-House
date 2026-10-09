@@ -3,6 +3,7 @@ import { database } from './database';
 import { VenueEngine } from './engine';
 import { DomainError, localInstant } from './domain';
 import { verifySandboxEvent } from './payments';
+import { emailWebhook } from './email-delivery';
 
 import { adminConfigured, adminIdentity, requireRole } from './auth';
 import { Operations } from './operations';
@@ -26,6 +27,7 @@ export async function api(request:Request):Promise<Response> {
   const send=(data:unknown,status=200,headers:Record<string,string>={})=>Response.json(data,{status,headers:{'Cache-Control':'no-store',...headers}});
   let db:ReturnType<typeof database>|undefined;
   try {
+    if(path==='/api/notifications/webhook/resend')return send(await emailWebhook(request));
     if(path==='/api/health') return send({service:'224-live-house',mode:sandboxEnabled()?'development-sandbox':'configuration-required',adminMode:adminConfigured()?'access':'configuration-required'});
     if(!sandboxEnabled() && !(path.startsWith('/api/admin/')&&adminConfigured())) throw new DomainError('production_not_configured',503);
     const origin=process.env.APP_ORIGIN??url.origin;

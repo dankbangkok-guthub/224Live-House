@@ -2,12 +2,12 @@
 
 | Gate | Evidence/status |
 | --- | --- |
-| Domain, SQL and payment sandbox | 56 local tests passed, including five persistent-queue scenarios and three email adapter/rendering tests |
+| Domain, SQL and payment sandbox | 61 local tests passed, including queue reliability, signed email callbacks, reordered/early events and permanent suppression |
 | Native PostgreSQL concurrent connections | GitHub CI required for this commit; local embedded tests are not native locking evidence |
 | TypeScript and Cloudflare bundle | Checked during this build; final deployment checks recorded in commit checks |
-| Neon migrations | 001–003 applied to development then production; restricted runtime outbox access verified |
+| Neon migrations | 001–004 applied to development then production; restricted runtime outbox access verified |
 | Cloudflare database and admin MFA | Not activated: runtime secrets and Access policy/account integration remain pending |
-| Resend live sending | No sending domains in connected account; no real messages sent; verified sender/key and delivery/bounce handling pending |
+| Resend live sending | No sending domains in connected account; no real messages sent; verified sender/key and delivery/bounce handling built; runtime activation pending |
 | Payso live checkout | Owner selected Payso; merchant credentials, definitive callback/inquiry/expiry contract and adapter tests pending |
 | iPhone Safari and Android Chrome | No physical-device evidence available; not passed |
 | Launch | Not ready; production booking/payment routes remain closed |

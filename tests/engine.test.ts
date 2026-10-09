@@ -10,6 +10,7 @@ import { accountIdentity } from '../src/auth';
 import { startTestDatabase } from './postgres';
 import { Notifications } from '../src/notifications';
 import { EmailFailure } from '../src/email';
+import { EmailDelivery, recipientDigest } from '../src/email-delivery';
 
 let stop:()=>Promise<void>,e:VenueEngine;
 let now=new Date('2030-01-01T00:00Z');
@@ -23,11 +24,12 @@ before(async()=>{
   await pool.query(await readFile(new URL('../db/001_engine.sql',import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../db/002_admin.sql',import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../db/003_notifications.sql',import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../db/004_email_delivery.sql',import.meta.url),'utf8'));
 });
 after(async()=>{if(e)await e.pool.end();if(stop)await stop();});
 beforeEach(async()=>{
   now=new Date('2030-01-01T00:00Z');
-  await e.pool.query('TRUNCATE admin_accounts,fulfillment,payment_reviews,audit_logs,outbox,idempotency,payment_events,payments,allocations,extensions,bookings,services,resource_units,resource_pools,spaces CASCADE');
+  await e.pool.query('TRUNCATE email_delivery_events,email_suppressions,admin_accounts,fulfillment,payment_reviews,audit_logs,outbox,idempotency,payment_events,payments,allocations,extensions,bookings,services,resource_units,resource_pools,spaces CASCADE');
   for(const id of ['studio','lounge'])await e.configureSpace({id,name:id,capacity:20,config,published:true},'test');
 });
 function token(){return randomBytes(32).toString('hex');}
@@ -88,6 +90,39 @@ test('stale reminder is suppressed when event start changes',async()=>{
  now=new Date('2030-01-03T12:00Z');await q.reminders();
  await e.pool.query("UPDATE bookings SET start_at=start_at+interval '1 hour' WHERE id=$1",[b.id]);await q.drain();
  assert.equal((await e.pool.query("SELECT status FROM outbox WHERE kind='event_reminder'")).rows[0].status,'skipped');
+});
+function delivery(messageId:string,status:string,id=randomUUID()) {return {id,digest:'digest-'+id,messageId,status,at:now};}
+test('delivery callbacks deduplicate and cannot regress delivery or complaint evidence',async()=>{
+ const {b,t}=await hold();await paid(b,t);await queue({send:async()=> 'delivery-1'}).drain();
+ const tracking=new EmailDelivery(e.pool),event=delivery('delivery-1','delivered');
+ await Promise.all([tracking.record(event),tracking.record(event)]);
+ assert.equal((await e.pool.query('SELECT count(*) FROM email_delivery_events')).rows[0].count,'1');
+ await tracking.record(delivery('delivery-1','accepted'));
+ assert.equal((await e.pool.query('SELECT delivery_status FROM outbox')).rows[0].delivery_status,'delivered');
+ await tracking.record(delivery('delivery-1','complained'));await tracking.record(delivery('delivery-1','delivered'));
+ assert.equal((await e.pool.query('SELECT delivery_status FROM outbox')).rows[0].delivery_status,'complained');
+ assert.equal((await e.pool.query('SELECT recipient_digest FROM email_suppressions')).rows[0].recipient_digest,recipientDigest('test@example.com'));
+ await assert.rejects(()=>tracking.record({...event,digest:'changed'}),/email_event_conflict/);
+});
+test('early callbacks reconcile after send response; unknown provider IDs cannot suppress customers',async()=>{
+ const tracking=new EmailDelivery(e.pool);
+ await tracking.record(delivery('unknown-provider','bounced'));
+ assert.equal((await e.pool.query('SELECT count(*) FROM email_suppressions')).rows[0].count,'0');
+ const {b,t}=await hold();await paid(b,t);
+ await queue({send:async()=>{await tracking.record(delivery('early-provider','bounced'));return 'early-provider';}}).drain();
+ assert.equal((await e.pool.query('SELECT delivery_status FROM outbox')).rows[0].delivery_status,'bounced');
+ assert.equal((await e.pool.query('SELECT count(*) FROM email_suppressions')).rows[0].count,'1');
+});
+test('permanent bounces block subsequent queued email without changing booking/payment state',async()=>{
+ const {b,t}=await hold();await paid(b,t);let sends=0;
+ const q=queue({send:async()=>{sends++;return 'bounce-provider';}});await q.drain();
+ await new EmailDelivery(e.pool).record(delivery('bounce-provider','bounced'));
+ now=new Date('2030-01-03T12:00Z');await q.reminders();await q.drain();
+ assert.equal(sends,1);
+ const reminder=(await e.pool.query("SELECT status,last_error FROM outbox WHERE kind='event_reminder'")).rows[0];
+ assert.equal(reminder.status,'skipped');assert.equal(reminder.last_error,'recipient_suppressed');
+ assert.equal((await e.pool.query('SELECT status FROM bookings WHERE id=$1',[b.id])).rows[0].status,'confirmed');
+ assert.equal((await e.pool.query('SELECT status FROM payments')).rows[0].status,'paid');
 });
 test('two independent concurrent checkouts cannot hold the same space',async()=>{
   const a=await prepare(),b=await prepare();

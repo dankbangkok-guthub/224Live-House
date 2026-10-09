@@ -52,7 +52,7 @@ Pending extensions expand existing resource allocations to the union of the orig
 
 Sandbox expiry can release unpaid reservations because no external bank/provider processing exists. Run npm run db:expire periodically during development, or POST /api/admin/expire. Do not use this expiry mechanism for live payments without provider cancellation/reconciliation.
 
-Late paid events after released capacity enter manual review. They never overbook. Verified-payment emails and event reminders now use a persistent Resend queue with frozen messages, leases, bounded retries and owner/manager queue visibility. Sending remains disabled until runtime credentials and a verified domain are configured. Provider acceptance is recorded separately from inbox delivery; delivery/bounce webhooks remain a launch requirement.
+Late paid events after released capacity enter manual review. They never overbook. Verified-payment emails and event reminders now use a persistent Resend queue with frozen messages, leases, bounded retries and owner/manager queue visibility. Sending remains disabled until runtime credentials and a verified domain are configured. Provider acceptance is recorded separately from inbox delivery; signed delivery/bounce callback handling is implemented and awaits runtime activation.
 
 Customer access uses random 32-byte tokens, SHA-256 digests in the database, and HttpOnly SameSite cookies. Token redemption by emailed links and account recovery are not implemented. The browser cookie expires after seven days.
 

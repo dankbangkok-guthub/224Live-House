@@ -1,3 +1,4 @@
+import { EmailDelivery, recipientDigest } from './email-delivery';
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import { transaction } from './database';
@@ -34,6 +35,9 @@ export class Notifications {
    let message=job.message;
    try{message??=renderEmail(job.kind,b,job.payload,this.config.from,this.config.origin);}
    catch(error){await db.query("UPDATE outbox SET status='manual_review',last_error=$2 WHERE id=$1",[job.id,error instanceof EmailFailure?error.code:'email_configuration_invalid']);return {skipped:true};}
+   if((await db.query('SELECT recipient_digest FROM email_suppressions WHERE recipient_digest=$1',[recipientDigest(message.to[0])])).rows.length){
+    await db.query("UPDATE outbox SET status='skipped',last_error='recipient_suppressed',lease_until=NULL WHERE id=$1",[job.id]);return {skipped:true};
+   }
    const lease=randomUUID();
    await db.query(`UPDATE outbox SET status='sending',attempts=attempts+1,first_attempt_at=COALESCE(first_attempt_at,$2),lease_token=$3,lease_until=$4,message=$5 WHERE id=$1`,
     [job.id,now,lease,new Date(now.getTime()+120000),message]);
@@ -48,7 +52,7 @@ export class Notifications {
    const {job,message,lease}=claim;
    try{
     const providerId=await this.provider.send(message,'224-email-'+job.id);
-    await this.pool.query("UPDATE outbox SET status='accepted',delivered_at=$3,provider_message_id=$4,last_error=NULL,lease_until=NULL WHERE id=$1 AND lease_token=$2 AND status='sending'",[job.id,lease,this.clock(),providerId]);accepted++;
+    await new EmailDelivery(this.pool).accepted(job.id,lease,this.clock(),providerId);accepted++;
    }catch(error){
     const failure=error instanceof EmailFailure?error:new EmailFailure('delivery_result_unknown',true);
     const retry=failure.retryable&&job.attempts<8;
