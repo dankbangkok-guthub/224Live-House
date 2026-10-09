@@ -185,3 +185,46 @@ test('extension validates policy, maximum duration and closing hours',async()=>{
     config:{...config,schedule:{weekly:{'5':[{start:1020,end:1230}]}}}},'test');
   await assert.rejects(()=>e.requestExtension(b.id,t,1,randomUUID(),'test-1'),/closed_period/);
 });
+test('schedule edits preserve prices and reject stale concurrent revisions',async()=>{
+  const version=(await e.scheduleOverview('studio','2030-01-04')).spaces.find(s=>s.id==='studio').version;
+  const changed={weekly:{'5':[{start:1020,end:1500}]}};
+  const results=await Promise.allSettled([
+    e.updateSchedule('studio',changed,version,'manager'),
+    e.updateSchedule('studio',{weekly:{}},version,'other-manager')]);
+  assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+  assert.match(String((results.find(r=>r.status==='rejected') as PromiseRejectedResult).reason),/schedule_changed_reload/);
+  const space=(await e.pool.query('SELECT * FROM spaces WHERE id=$1',['studio'])).rows[0];
+  assert.equal(space.version,version+1);
+  assert.equal(space.config.baseSatang,config.baseSatang);
+  assert.equal(space.config.otSatang,config.otSatang);
+  assert.equal((await e.pool.query("SELECT count(*) FROM audit_logs WHERE action='schedule_updated'")).rows[0].count,'1');
+});
+test('closing a special date reports affected buffered booking without altering its snapshot',async()=>{
+  const {b,t}=await hold();await paid(b,t);
+  const version=(await e.scheduleOverview('studio','2030-01-04')).spaces.find(s=>s.id==='studio').version;
+  const updated=await e.updateSchedule('studio',{...schedule,overrides:{'2030-01-04':[{start:1080,end:1230}]}},version,'manager');
+  assert.equal(updated.reviewBookings.length,1); // Setup starts at 17:30, before new 18:00 opening.
+  assert.equal(updated.reviewBookings[0].id,b.id);
+  const status=await e.status(b.id,t);
+  assert.equal(status.status,'confirmed');assert.deepEqual(status.quote,b.quote);
+  await assert.rejects(()=>e.preview({...input,startLocal:'2030-01-04T22:00'}),/closed_period/);
+});
+test('day operations include overnight buffered intervals and isolate the selected space',async()=>{
+  const {b}=await hold({...input,startLocal:'2030-01-04T23:00'});
+  await e.blackout('lounge','2030-01-04T23:00+07:00','2030-01-05T02:00+07:00','maintenance','manager');
+  const overview=await e.scheduleOverview('studio','2030-01-05');
+  assert.equal(overview.segments.length,1);assert.equal(overview.segments[0].booking_id,b.id);
+  assert.equal(new Date(overview.segments[0].end_at).toISOString(),b.quote.occupiedEnd);
+  assert.equal('customer' in overview.segments[0],false);
+  await assert.rejects(()=>e.scheduleOverview('studio','2030-02-30'),/invalid/);
+});
+test('releasing a blackout retains history, is idempotent and cannot release a booking',async()=>{
+  const block=await e.blackout('studio','2030-01-04T17:00+07:00','2030-01-04T21:00+07:00','maintenance','manager');
+  await assert.rejects(()=>hold(),/capacity_conflict/);
+  await e.releaseBlackout('studio',block.id,'manager');await e.releaseBlackout('studio',block.id,'manager');
+  assert.equal((await e.pool.query("SELECT count(*) FROM audit_logs WHERE action='blackout_released'")).rows[0].count,'1');
+  assert.ok((await e.pool.query('SELECT released_at FROM allocations WHERE id=$1',[block.id])).rows[0].released_at);
+  const {b}=await hold();
+  const allocation=(await e.pool.query('SELECT id FROM allocations WHERE booking_id=$1',[b.id])).rows[0];
+  await assert.rejects(()=>e.releaseBlackout('studio',allocation.id,'manager'),/blackout_not_found/);
+});

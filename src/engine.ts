@@ -1,7 +1,7 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { transaction } from './database';
-import { DomainError, integer, localText, MINUTE, quote, scheduleContains, validateService, validateSpace,
+import { DomainError, integer, localInstant, localText, MINUTE, quote, scheduleContains, validateSchedule, validateService, validateSpace,
   type Quote, type RequestInput, type Schedule, type Service, type ServiceConfig, type Space, type SpaceConfig } from './domain';
 
 function canonical(value: unknown): string {
@@ -362,6 +362,43 @@ export class VenueEngine {
       await db.query('INSERT INTO allocations(id,unit_id,start_at,end_at,reason) VALUES($1,$2,$3,$4,$5)',[id,'space:'+spaceId,a,b,reason]);
       await audit(db,actor,'blackout_created',id);
       return {id};
+    });
+  }
+  async scheduleOverview(spaceId:string,date:string) {
+    const start=localInstant(date+'T00:00'), end=new Date(start.getTime()+1440*MINUTE);
+    const spaces=(await this.pool.query('SELECT id,name,capacity,config,version,published FROM spaces ORDER BY name')).rows;
+    if(!spaces.some(s=>s.id===spaceId))throw new DomainError('space_unavailable',404);
+    const segments=(await this.pool.query(`SELECT a.id,a.start_at,a.end_at,a.reason,a.booking_id,b.code,b.status
+      FROM allocations a LEFT JOIN bookings b ON b.id=a.booking_id
+      WHERE a.unit_id=$1 AND a.released_at IS NULL AND a.start_at<$3 AND a.end_at>$2 ORDER BY a.start_at`,
+      ['space:'+spaceId,start,end])).rows;
+    return {spaces,segments,date,timezone:'Asia/Bangkok'};
+  }
+  async updateSchedule(spaceId:string,schedule:Schedule,expectedVersion:number,actor:string) {
+    validateSchedule(schedule);integer(expectedVersion,1);
+    return transaction(this.pool,async db=>{
+      const space=(await db.query('SELECT * FROM spaces WHERE id=$1 FOR UPDATE',[spaceId])).rows[0];
+      if(!space)throw new DomainError('space_unavailable',404);
+      if(space.version!==expectedVersion)throw new DomainError('schedule_changed_reload');
+      const config={...space.config,schedule};
+      const occupied=(await db.query(`SELECT a.start_at,a.end_at,b.id,b.code,b.guests FROM allocations a
+        JOIN bookings b ON b.id=a.booking_id WHERE a.unit_id=$1 AND a.released_at IS NULL`,['space:'+spaceId])).rows;
+      const impacted=occupied.filter(b=>!scheduleContains(schedule,new Date(b.start_at),new Date(b.end_at)));
+      await db.query('UPDATE spaces SET config=$1,version=version+1 WHERE id=$2',[config,spaceId]);
+      await audit(db,actor,'schedule_updated',spaceId,{before:space.config.schedule,after:schedule,impactedBookingIds:impacted.map(b=>b.id)});
+      return {id:spaceId,version:space.version+1,reviewBookings:impacted};
+    });
+  }
+  async releaseBlackout(spaceId:string,id:string,actor:string) {
+    if(!/^[a-f0-9-]{36}$/.test(id))throw new DomainError('invalid_blackout',400);
+    return transaction(this.pool,async db=>{
+      await this.lockPools(db,['space:'+spaceId]);
+      const a=(await db.query('SELECT * FROM allocations WHERE id=$1 AND unit_id=$2 FOR UPDATE',[id,'space:'+spaceId])).rows[0];
+      if(!a || a.booking_id || !a.reason)throw new DomainError('blackout_not_found',404);
+      if(a.released_at)return {id,released:true};
+      await db.query('UPDATE allocations SET released_at=$1 WHERE id=$2',[this.clock(),id]);
+      await audit(db,actor,'blackout_released',id,{spaceId,start:a.start_at,end:a.end_at,reason:a.reason});
+      return {id,released:true};
     });
   }
   async availability(spaceId:string,date:string,hours:number,guests:number) {

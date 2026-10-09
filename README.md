@@ -109,3 +109,7 @@ See docs/SPACE_BOOKING_IMPLEMENTATION_PLAN.md and docs/VENUE_ENGINE_PHASED_BUILD
 ## Separate Cloudflare site
 
 Worker target: `224-live-house`. See [Cloudflare deployment](docs/CLOUDFLARE_DEPLOYMENT.md) for publishing instructions. `npm run build:cloudflare` creates the Worker bundle. The initial public deployment keeps real booking/payment APIs disabled pending production configuration.
+
+### Schedule administration
+
+Open `/admin` in the development sandbox and connect using the configured development admin token. Edit weekday windows (including next-day closing), add date overrides, inspect buffered occupied intervals, and create/release blackout periods. Reload saved hours after a stale-revision error. Saving hours preserves current prices and existing bookings; affected booking codes are reported for manager review. Production access remains disabled until the database and individual MFA-protected admin accounts are integrated. See `docs/BUILD_STATUS.md` for remaining operations work.

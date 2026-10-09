@@ -91,11 +91,15 @@ export async function api(request:Request):Promise<Response> {
     }
     if(path.startsWith('/api/admin/')) {
       admin(request);
+      if(request.method==='GET' && path==='/api/admin/schedule')return send(await e.scheduleOverview(url.searchParams.get('spaceId')??'',url.searchParams.get('date')??''));
+      if(request.method==='GET' && path==='/api/admin/spaces')return send((await e.pool.query('SELECT id,name,capacity,config,version,published FROM spaces ORDER BY name')).rows);
       if(request.method==='GET' && path==='/api/admin/bookings') {
         return send((await e.pool.query('SELECT id,code,space_id,start_at,end_at,status,quote FROM bookings ORDER BY start_at LIMIT 200')).rows);
       }
       if(request.method==='POST') {
         const input=await body();
+        if(path==='/api/admin/schedule')return send(await e.updateSchedule(input.spaceId,input.schedule,input.expectedVersion,'admin'));
+        if(path==='/api/admin/blackouts/release')return send(await e.releaseBlackout(input.spaceId,input.id,'admin'));
         if(path==='/api/admin/spaces')return send(await e.configureSpace(input,'admin'));
         if(path==='/api/admin/services')return send(await e.configureService(input,'admin'));
         if(path==='/api/admin/resources')return send(await e.provisionPool(input,'admin'));

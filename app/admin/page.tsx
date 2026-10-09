@@ -1,0 +1,42 @@
+'use client';
+import { useEffect, useState } from 'react';
+import type { Schedule, Window } from '../../src/domain';
+const days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function time(n:number){return String(Math.floor(n/60)%24).padStart(2,'0')+':'+String(n%60).padStart(2,'0');}
+function mins(s:string){const [h,m]=s.split(':').map(Number);return h*60+m;}
+function local(s:string){return new Date(s).toLocaleString('en-GB',{timeZone:'Asia/Bangkok'});}
+export default function AdminSchedule(){
+ const [enabled,setEnabled]=useState(false),[token,setToken]=useState(''),[spaces,setSpaces]=useState<any[]>([]),[spaceId,setSpace]=useState('');
+ const [schedule,setSchedule]=useState<Schedule>({weekly:{}}),[version,setVersion]=useState(0),[date,setDate]=useState('');
+ const [segments,setSegments]=useState<any[]>([]),[message,setMessage]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ const [specialDate,setSpecialDate]=useState(''),[block,setBlock]=useState({start:'',end:'',reason:''});
+ useEffect(()=>{const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const part=(name:string)=>parts.find(p=>p.type===name)?.value;setDate(part('year')+'-'+part('month')+'-'+part('day'));fetch('/api/health').then(r=>r.json()).then(d=>setEnabled(d.mode==='development-sandbox')).catch(()=>setError('Unable to check admin setup. Reload this page to retry.'));},[]);
+ async function call(path:string,body?:unknown){const r=await fetch(path,{method:body===undefined?'GET':'POST',headers:{Authorization:'Bearer '+token,...(body===undefined?{}:{'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error?.replaceAll('_',' ')??'Request failed');return d;}
+ async function run(work:()=>Promise<void>){setBusy(true);setError('');setMessage('');try{await work();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ function select(s:any){setSpace(s.id);setSchedule(structuredClone(s.config.schedule));setVersion(s.version);setSegments([]);}
+ async function connect(){await run(async()=>{const rows=await call('/api/admin/spaces');setSpaces(rows);if(rows.length)select(rows[0]);else setMessage('Configure your venue using the space configuration API before editing schedules.');});}
+ async function refresh(){const d=await call('/api/admin/schedule?spaceId='+encodeURIComponent(spaceId)+'&date='+date);setSegments(d.segments);setSpaces(d.spaces);}
+ function windows(key:string,override=false){return (override?schedule.overrides?.[key]:schedule.weekly[key])??[];}
+ function change(key:string,ws:Window[],override=false){setSchedule(s=>override?{...s,overrides:{...s.overrides,[key]:ws}}:{...s,weekly:{...s.weekly,[key]:ws}});}
+ function editor(key:string,override=false){const ws=windows(key,override);return <div className="hours-editor">
+  {!ws.length&&<small>Closed</small>}{ws.map((w,i)=><div className="row" key={i}>
+   <label>Opens<input type="time" value={time(w.start)} onChange={e=>change(key,ws.map((v,j)=>j===i?{...v,start:mins(e.target.value)}:v),override)}/></label>
+   <label>Closes<input type="time" value={time(w.end)} onChange={e=>change(key,ws.map((v,j)=>j===i?{...v,end:mins(e.target.value)+(v.end>=1440?1440:0)}:v),override)}/></label>
+   <label><input type="checkbox" checked={w.end>=1440} onChange={e=>change(key,ws.map((v,j)=>j===i?{...v,end:(v.end%1440)+(e.target.checked?1440:0)}:v),override)}/> Closes next day</label>
+   <button onClick={()=>change(key,ws.filter((_,j)=>j!==i),override)}>Remove hours</button></div>)}
+  <button onClick={()=>change(key,[...ws,{start:540,end:1080}],override)}>Add opening window</button></div>;}
+ return <><header><a href="/">224<span>LIVE HOUSE</span></a><strong>Schedule administration</strong></header><main>
+ <h1>Spaces & schedule</h1><p>All dates and times use Asia/Bangkok. Reservations include setup and cleanup.</p>
+ {!enabled?<section className="panel"><h2>Admin setup required</h2><p>This dashboard is available in the development sandbox. Live access requires a connected PostgreSQL database and individual admin accounts with MFA. No public editing is enabled.</p></section>:<>
+ <section className="panel"><h2>Connect development admin</h2><p>Your development API token stays in memory and clears when this page closes. It is never stored in browser storage or a URL.</p><label>Admin API token<input type="password" autoComplete="off" value={token} onChange={e=>setToken(e.target.value)}/></label><button disabled={busy||token.length<32} onClick={connect}>Connect</button><button onClick={()=>{setToken('');setSpaces([]);setSpace('');setSegments([]);}}>Disconnect</button></section>
+ {error&&<p role="alert" className="error">{error}</p>}{message&&<p role="status" className="panel">{message}</p>}
+ {!!spaces.length&&<><section className="panel"><label>Space<select disabled={busy} value={spaceId} onChange={e=>select(spaces.find(s=>s.id===e.target.value))}>{spaces.map(s=><option key={s.id} value={s.id}>{s.name}{s.published?'':' (unpublished)'}</option>)}</select></label></section>
+ <div className="columns"><div><section className="panel"><h2>Weekly opening hours</h2><button disabled={busy} onClick={()=>run(async()=>{const rows=await call('/api/admin/spaces');setSpaces(rows);select(rows.find((s:any)=>s.id===spaceId));setMessage('Latest saved schedule loaded.');})}>Reload saved hours</button>{days.map((day,i)=><section key={day}><h3>{day}</h3>{editor(String(i))}</section>)}</section>
+ <section className="panel"><h2>Special dates</h2><p>A date override replaces that date’s hours, including overnight hours carried from the previous day. Leave it closed for a holiday.</p><label>Date<input type="date" value={specialDate} onChange={e=>setSpecialDate(e.target.value)}/></label><button disabled={!specialDate||!!schedule.overrides?.[specialDate]} onClick={()=>change(specialDate,[],true)}>Add date override</button>
+ {Object.keys(schedule.overrides??{}).sort().map(day=><section key={day}><h3>{day}</h3>{editor(day,true)}<button onClick={()=>setSchedule(s=>{const overrides={...s.overrides};delete overrides[day];return {...s,overrides};})}>Use weekly hours again</button></section>)}
+ <button className="primary" disabled={busy} onClick={()=>run(async()=>{const r=await call('/api/admin/schedule',{spaceId,schedule,expectedVersion:version});setVersion(r.version);setMessage(r.reviewBookings.length?'Saved. '+r.reviewBookings.length+' existing reservation(s) need review: '+[...new Set(r.reviewBookings.map((b:any)=>b.code))].join(', ')+'. No booking was cancelled.':'Schedule saved.');})}>Save opening hours</button></section></div>
+ <aside><section className="panel"><h2>Day operations</h2><label>Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><button disabled={busy||!date} onClick={()=>run(refresh)}>Load schedule</button>
+ {segments.map(a=><article className="service" key={a.id}><h3>{a.booking_id?a.code:'Blocked'}</h3><p>{local(a.start_at)} → {local(a.end_at)}</p><p>{a.booking_id?a.status:a.reason}</p>{!a.booking_id&&<button disabled={busy} onClick={()=>run(async()=>{await call('/api/admin/blackouts/release',{spaceId,id:a.id});await refresh();setMessage('Block released; history retained.');})}>Release block</button>}</article>)}{!segments.length&&<p>Load a date to see occupied intervals.</p>}</section>
+ <section className="panel"><h2>Block time</h2><p>Conflicts are rejected. Existing bookings are never overwritten.</p><label>From<input type="datetime-local" value={block.start} onChange={e=>setBlock({...block,start:e.target.value})}/></label><label>Until<input type="datetime-local" value={block.end} onChange={e=>setBlock({...block,end:e.target.value})}/></label><label>Reason<input maxLength={500} value={block.reason} onChange={e=>setBlock({...block,reason:e.target.value})}/></label><button disabled={busy||!block.start||!block.end||!block.reason} onClick={()=>run(async()=>{await call('/api/admin/blackouts',{spaceId,start:block.start+':00+07:00',end:block.end+':00+07:00',reason:block.reason});await refresh();setMessage('Time blocked.');})}>Create blackout</button></section></aside></div></>}
+ </> }</main></>;
+}
