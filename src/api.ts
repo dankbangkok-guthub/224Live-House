@@ -7,11 +7,6 @@ import { verifySandboxEvent } from './payments';
 import { adminConfigured, adminIdentity, requireRole } from './auth';
 import { Operations } from './operations';
 
-let singleton: ReturnType<typeof database>|undefined;
-function engine() {
-  singleton??=database(process.env.DATABASE_URL??'');
-  return new VenueEngine(singleton.pool);
-}
 function access(request:Request,id:string) {
   const h=request.headers.get('x-booking-token');
   if(h) return h;
@@ -29,6 +24,7 @@ function sandboxEnabled() {
 export async function api(request:Request):Promise<Response> {
   const url=new URL(request.url), path=url.pathname.replace(/\/$/,'');
   const send=(data:unknown,status=200,headers:Record<string,string>={})=>Response.json(data,{status,headers:{'Cache-Control':'no-store',...headers}});
+  let db:ReturnType<typeof database>|undefined;
   try {
     if(path==='/api/health') return send({service:'224-live-house',mode:sandboxEnabled()?'development-sandbox':'configuration-required',adminMode:adminConfigured()?'access':'configuration-required'});
     if(!sandboxEnabled() && !(path.startsWith('/api/admin/')&&adminConfigured())) throw new DomainError('production_not_configured',503);
@@ -37,7 +33,8 @@ export async function api(request:Request):Promise<Response> {
       if(request.headers.get('origin')!==origin) throw new DomainError('invalid_origin',403);
       if(!request.headers.get('content-type')?.startsWith('application/json')) throw new DomainError('json_required',415);
     }
-    const e=engine();
+    db=database(process.env.DATABASE_URL??'');
+    const e=new VenueEngine(db.pool);
     const body=async()=> {
       const text=await request.text();
       if(text.length>16000) throw new DomainError('request_too_large',413);
@@ -125,5 +122,5 @@ export async function api(request:Request):Promise<Response> {
     // No customer data, tokens or payment payloads logged.
     console.error('224 API error', {correlationId:randomUUID(),code:(error as {code?:string}).code??'internal'});
     return send({error:'internal_error'},500);
-  }
+  }finally{await db?.pool.end();}
 }

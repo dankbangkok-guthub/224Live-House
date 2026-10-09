@@ -12,7 +12,7 @@
 | 6 | Pending extensions, separate sandbox payment, promotion and rollback | Production provider/pay-later operations and owner policy |
 | 7 | Initial responsive customer UI and CI workflow | MFA admin, full operations UI, mobile QA and deployment |
 
-Local verification: 39 functional/domain/database/auth tests pass, TypeScript passes, and Vinext production build passes.
+Local verification: 41 functional/domain/database/auth tests pass, TypeScript passes, and Vinext production build passes.
 
 Local database tests use embedded PostgreSQL with serialized transactions. All 26 tests also passed on native PostgreSQL 17 in GitHub CI run 37898186888, including concurrent checkout/resource and webhook/expiry races. Browser/mobile runtime tests have not been completed.
 
@@ -31,3 +31,9 @@ This completes the schedule-controls slice of Phase 2, not the full product road
 ## Remaining Phase 2 operations implementation
 
 Added migration `002_admin`, first-owner provisioning, server-verified Access JWT login with individual account roles and revocation, venue/rate editing, catalog/media URL editing, inventory and concierge shifts, transactional reassignment, staff-scoped fulfillment notes, bookings, payment review queue and owner audit/team access screens. Native provider payment state cannot be edited through these screens. PostgreSQL and Access credentials/policy are still required to activate production admin; production checkout remains closed. Direct signed uploads, automatic reconciliation/refunds, notifications and full mobile runtime QA remain outstanding.
+
+## Neon provisioning
+
+Created a Singapore PostgreSQL 17 Neon project with production and development branches. Both contain all 16 tables, both numbered migrations and `btree_gist`. Development SQL checks verified exclusion protection for space, inventory and concierge units and rolled back their test fixtures. Production has no bookings, spaces or admin accounts. A restricted `venue_app` role has explicit runtime privileges and cannot rewrite audit history or create schemas/databases/roles.
+
+Added an optional Neon WebSocket driver for Cloudflare interactive transactions and request-scoped pool cleanup. Native `pg` remains the default for local and CI databases. All 41 local tests, TypeScript and the Cloudflare build pass. Worker runtime secrets, confirmed owner login and Access MFA policy remain to connect; no live editing or customer checkout has been enabled. See [Neon setup](NEON_SETUP.md).
