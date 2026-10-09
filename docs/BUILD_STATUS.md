@@ -12,7 +12,7 @@
 | 6 | Pending extensions, separate sandbox payment, promotion and rollback | Production provider/pay-later operations and owner policy |
 | 7 | Initial responsive customer UI and CI workflow | MFA admin, full operations UI, mobile QA and deployment |
 
-Local verification: 38 functional/domain/database/auth tests pass, TypeScript passes, and Vinext production build passes.
+Local verification: 39 functional/domain/database/auth tests pass, TypeScript passes, and Vinext production build passes.
 
 Local database tests use embedded PostgreSQL with serialized transactions. All 26 tests also passed on native PostgreSQL 17 in GitHub CI run 37898186888, including concurrent checkout/resource and webhook/expiry races. Browser/mobile runtime tests have not been completed.
 

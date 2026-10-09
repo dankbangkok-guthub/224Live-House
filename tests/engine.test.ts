@@ -280,3 +280,12 @@ test('account binding, revocation and last-owner protection are enforced in data
  await ops.account({email:member.email,role:'staff',unitId:member.unitId,active:false},owner);
  await assert.rejects(()=>accountIdentity(e.pool,{email:member.email,subject:'staff-sub',issuedAt:9999999999}),/account_disabled/);
 });
+
+test('availability honors configured 15-minute slots with overnight buffers',async()=>{
+ await e.configureSpace({id:'studio',name:'Studio',capacity:20,published:true,config:{...config,slotMinutes:15}},'test');
+ await hold({...input,startLocal:'2030-01-04T23:00'});
+ const available=await e.availability('studio','2030-01-05',2,5);
+ assert.equal(available.slots.length,96);
+ assert.equal(available.slots.find(s=>s.startLocal==='2030-01-05T00:15')!.available,false);
+ assert.equal(available.slots.find(s=>s.startLocal==='2030-01-05T02:00')!.available,true);
+});

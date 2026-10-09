@@ -403,14 +403,21 @@ export class VenueEngine {
     });
   }
   async availability(spaceId:string,date:string,hours:number,guests:number) {
-    // Preview deliberately limits workload to 48 candidates for a 30-minute launch picker.
     const catalog=await this.catalogPublic(), s=catalog.spaces.find(s=>s.id===spaceId);
     if(!s) throw new DomainError('space_unavailable',404);
+    const day=localInstant(date+'T00:00');
+    const occupied=(await this.pool.query(`SELECT start_at,end_at FROM allocations WHERE unit_id=$1 AND released_at IS NULL
+      AND end_at>$2 AND start_at<$3`,['space:'+spaceId,new Date(day.getTime()-s.config.setupMinutes*MINUTE),
+      new Date(day.getTime()+(1440+s.config.maxHours*60+s.config.cleanupMinutes)*MINUTE)])).rows;
     const slots=[];
-    for(let minute=0;minute<1440;minute+=Math.max(30,s.config.slotMinutes)) {
+    // One database read; advisory slots still revalidate atomically when a hold is created.
+    for(let minute=0;minute<1440;minute+=s.config.slotMinutes) {
       const startLocal=date+'T'+String(Math.floor(minute/60)).padStart(2,'0')+':'+String(minute%60).padStart(2,'0');
-      try {await this.preview({spaceId,startLocal,hours,guests,services:[]});slots.push({startLocal,available:true});}
-      catch(e) {if(!(e instanceof DomainError))throw e; slots.push({startLocal,available:false,reason:e.code});}
+      try {
+        const q=quote(s,[],{spaceId,startLocal,hours,guests,services:[]},this.clock());
+        if(occupied.some(a=>new Date(a.start_at)<new Date(q.occupiedEnd)&&new Date(a.end_at)>new Date(q.occupiedStart)))throw new DomainError('capacity_conflict');
+        slots.push({startLocal,available:true});
+      }catch(e) {if(!(e instanceof DomainError))throw e; slots.push({startLocal,available:false,reason:e.code});}
     }
     return {date,slots};
   }
