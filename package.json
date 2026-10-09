@@ -20,7 +20,8 @@
     "deploy:vinext": "npm run build:cloudflare && wrangler deploy --config dist/server/wrangler.json",
     "build:cloudflare": "CLOUDFLARE_BUILD=1 vite build",
     "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy --config dist/server/wrangler.json",
-    "db:owner": "node --import tsx scripts/owner.ts"
+    "db:owner": "node --import tsx scripts/owner.ts",
+    "db:notifications": "node --import tsx scripts/notifications.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",

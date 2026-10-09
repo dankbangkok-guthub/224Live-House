@@ -92,6 +92,7 @@ export async function api(request:Request):Promise<Response> {
       if(request.method==='GET'&&path==='/api/admin/catalog')return send(await ops.catalog(who));
       if(request.method==='GET'&&path==='/api/admin/staff')return send(await ops.staff(who));
       if(request.method==='GET'&&path==='/api/admin/payments')return send(await ops.payments(who));
+      if(request.method==='GET'&&path==='/api/admin/notifications')return send(await ops.notifications(who));
       if(request.method==='GET'&&path==='/api/admin/accounts')return send(await ops.accounts(who));
       if(request.method==='GET'&&path==='/api/admin/audit')return send(await ops.audit(who));
       if(request.method==='GET' && path==='/api/admin/schedule')return send(await e.scheduleOverview(url.searchParams.get('spaceId')??'',url.searchParams.get('date')??''));

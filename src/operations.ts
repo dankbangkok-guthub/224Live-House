@@ -8,6 +8,7 @@ function uuid(v:unknown){if(typeof v!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f
 function text(v:unknown,max=1000){if(typeof v!=='string'||v.length>max)throw new DomainError('invalid_text',400);return v.trim();}
 export class Operations {
  constructor(private pool:Pool){}
+ async notifications(who:Identity){requireRole(who,['owner','manager']);return (await this.pool.query(`SELECT o.id,b.code,o.kind,o.status,o.attempts,o.next_attempt_at,o.provider_message_id,o.last_error,o.created_at FROM outbox o JOIN bookings b ON b.id=o.booking_id ORDER BY o.created_at DESC LIMIT 300`)).rows;}
  async catalog(who:Identity){requireRole(who,['owner','manager']);return (await this.pool.query('SELECT * FROM services ORDER BY name')).rows;}
  async staff(who:Identity){requireRole(who,['owner','manager']);return (await this.pool.query(`SELECT u.*,p.name,p.kind FROM resource_units u JOIN resource_pools p ON p.id=u.pool_id WHERE p.kind!='space' ORDER BY p.name,u.id`)).rows;}
  async assignments(who:Identity){return (await this.pool.query(`SELECT a.id,a.unit_id,a.service_id,a.start_at,a.end_at,b.code,b.guests,b.customer->>'eventType' AS event_type,b.customer->>'notes' AS event_notes,

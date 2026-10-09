@@ -2,9 +2,8 @@ import { Pool, type PoolClient } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool as NeonPool, neonConfig } from '@neondatabase/serverless';
 import { DomainError } from './domain';
-export function database(url: string) {
+export function database(url: string,driver=process.env.DATABASE_DRIVER??'pg') {
   if (!url) throw new Error('DATABASE_URL is required');
-  const driver=process.env.DATABASE_DRIVER??'pg';
   if(!['pg','neon'].includes(driver))throw new Error('Unsupported DATABASE_DRIVER');
   if(driver==='neon'){
     const parsed=new URL(url);

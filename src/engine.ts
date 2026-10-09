@@ -272,7 +272,8 @@ export class VenueEngine {
             await db.query("UPDATE extensions SET status='confirmed' WHERE id=$1",[ext.id]);
             await db.query('UPDATE allocations SET extension_id=NULL WHERE booking_id=$1 AND released_at IS NULL',[b.id]);
           } else await db.query("UPDATE bookings SET status='confirmed' WHERE id=$1",[b.id]);
-          await notify(db,b.id,'paid:'+p.id,ext?'extension_confirmed':'booking_confirmed',{paymentId:p.id});
+          const updated=(await db.query('SELECT start_at,end_at,quote FROM bookings WHERE id=$1',[b.id])).rows[0];
+          await notify(db,b.id,'paid:'+p.id,ext?'extension_confirmed':'booking_confirmed',{paymentId:p.id,amountPaidSatang:Number(p.amount_satang),snapshot:{start:updated.start_at,end:updated.end_at,quote:updated.quote}});
           outcome='confirmed';
         }
       } else if (['pending','processing'].includes(p.status)) {

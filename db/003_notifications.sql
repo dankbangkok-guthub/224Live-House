@@ -1,0 +1,10 @@
+ALTER TABLE outbox ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sending','accepted','skipped','manual_review'));
+ALTER TABLE outbox ADD COLUMN IF NOT EXISTS next_attempt_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE outbox ADD COLUMN IF NOT EXISTS lease_until timestamptz;
+ALTER TABLE outbox ADD COLUMN IF NOT EXISTS lease_token uuid;
+ALTER TABLE outbox ADD COLUMN IF NOT EXISTS first_attempt_at timestamptz;
+ALTER TABLE outbox ADD COLUMN IF NOT EXISTS message jsonb;
+ALTER TABLE outbox ADD COLUMN IF NOT EXISTS provider_message_id text;
+ALTER TABLE outbox ADD COLUMN IF NOT EXISTS last_error text;
+UPDATE outbox SET status='accepted' WHERE delivered_at IS NOT NULL AND status='pending';
+CREATE INDEX IF NOT EXISTS outbox_due ON outbox(next_attempt_at) WHERE status IN ('pending','sending');

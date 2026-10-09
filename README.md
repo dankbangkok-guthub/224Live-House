@@ -52,7 +52,7 @@ Pending extensions expand existing resource allocations to the union of the orig
 
 Sandbox expiry can release unpaid reservations because no external bank/provider processing exists. Run npm run db:expire periodically during development, or POST /api/admin/expire. Do not use this expiry mechanism for live payments without provider cancellation/reconciliation.
 
-Late paid events after released capacity enter manual review. They never overbook. Outbox entries are persisted, but email delivery, retries and operational exception resolution are not yet wired.
+Late paid events after released capacity enter manual review. They never overbook. Verified-payment emails and event reminders now use a persistent Resend queue with frozen messages, leases, bounded retries and owner/manager queue visibility. Sending remains disabled until runtime credentials and a verified domain are configured. Provider acceptance is recorded separately from inbox delivery; delivery/bounce webhooks remain a launch requirement.
 
 Customer access uses random 32-byte tokens, SHA-256 digests in the database, and HttpOnly SameSite cookies. Token redemption by emailed links and account recovery are not implemented. The browser cookie expires after seven days.
 
@@ -121,3 +121,7 @@ Open `/admin` in the development sandbox and connect using the configured develo
 ### Phase 2 operations and MFA
 
 `/admin/operations` adds venue/rate configuration, service catalog and published media URLs, staff/inventory capacity, weekly/overnight concierge shifts, conflict-checked assignments, fulfillment notes, bookings, payment review records, owner-managed team roles and audit history. Production admin now has a separate activation gate from customer sandbox checkout. Cloudflare Access JWTs are verified server-side; active accounts and role permissions are checked in PostgreSQL. Follow [admin activation](docs/ADMIN_ACTIVATION.md) to provision the database and MFA policy. No live secrets or accounts are supplied by this repository.
+
+### Confirmation emails and reminders
+
+Cloudflare cron runs every five minutes. `EMAIL_ENABLED` defaults to false. See [notification activation](docs/NOTIFICATIONS.md) for verified-domain setup, runtime secrets, retry behavior and remaining delivery/recovery gates. Local CLI: `npm run db:notifications`. The selected live payment provider is Payso; see [Payso integration requirements](docs/PAYSO_INTEGRATION.md). Live payment routes remain closed until its verified adapter and reconciliation are complete.

@@ -8,6 +8,8 @@ import type { SpaceConfig } from '../src/domain';
 import { Operations } from '../src/operations';
 import { accountIdentity } from '../src/auth';
 import { startTestDatabase } from './postgres';
+import { Notifications } from '../src/notifications';
+import { EmailFailure } from '../src/email';
 
 let stop:()=>Promise<void>,e:VenueEngine;
 let now=new Date('2030-01-01T00:00Z');
@@ -20,6 +22,7 @@ before(async()=>{
   const pool=db.pool??database(db.url!).pool;e=new VenueEngine(pool,()=>now,'test-quote-secret-for-isolated-database-only');
   await pool.query(await readFile(new URL('../db/001_engine.sql',import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../db/002_admin.sql',import.meta.url),'utf8'));
+  await pool.query(await readFile(new URL('../db/003_notifications.sql',import.meta.url),'utf8'));
 });
 after(async()=>{if(e)await e.pool.end();if(stop)await stop();});
 beforeEach(async()=>{
@@ -51,6 +54,41 @@ async function concierge(){
   await e.configureService({id:'assistant',name:'Assistant',poolId:'staff',published:true,
     config:{priceType:'hour',priceSatang:50000,min:1,max:1,setupMinutes:0,cleanupMinutes:0,leadMinutes:0,allowedSpaces:['studio','lounge']}},'test');
 }
+function queue(provider:any){return new Notifications(e.pool,provider,{from:'venue@example.com',origin:'https://venue.example',reminderHours:24},()=>now);}
+test('concurrent notification workers deliver one frozen verified-payment message',async()=>{
+ const {b,t}=await hold();const event=await paid(b,t);await e.verifiedPayment(event);
+ const messages:any[]=[];const q=queue({send:async(message:any,key:string)=>{messages.push({message,key});return 'provider-1';}});
+ await Promise.all([q.drain(),q.drain()]);
+ assert.equal(messages.length,1);assert.match(messages[0].message.text,/Verified payment/);
+ assert.equal((await e.pool.query('SELECT status FROM outbox')).rows[0].status,'accepted');
+});
+test('notification retries keep identical message and key after booking details change',async()=>{
+ const {b,t}=await hold();await paid(b,t);const messages:any[]=[];
+ const q=queue({send:async(message:any,key:string)=>{messages.push({message,key});if(messages.length===1)throw new EmailFailure('provider_unreachable',true);return 'provider-2';}});
+ await q.drain();await e.pool.query("UPDATE bookings SET customer=jsonb_set(customer,'{name}','\"Changed name\"') WHERE id=$1",[b.id]);
+ now=new Date(now.getTime()+3*60000);await q.drain();
+ assert.equal(messages.length,2);assert.deepEqual(messages[0],messages[1]);
+});
+test('expired provider duplicate-protection window requires manual review instead of resend',async()=>{
+ const {b,t}=await hold();await paid(b,t);let calls=0;
+ const q=queue({send:async()=>{calls++;throw new EmailFailure('provider_unreachable',true);}});
+ await q.drain();now=new Date(now.getTime()+21*3600000);await q.drain();
+ assert.equal(calls,1);assert.equal((await e.pool.query('SELECT status FROM outbox')).rows[0].status,'manual_review');
+});
+test('reminders enqueue once and skip cancelled or past events',async()=>{
+ const {b,t}=await hold();await paid(b,t);const sent:any[]=[];
+ const q=queue({send:async(message:any)=>{sent.push(message);return 'provider-3';}});
+ now=new Date('2030-01-03T12:00Z');await Promise.all([q.reminders(),q.reminders()]);
+ assert.equal((await e.pool.query("SELECT count(*) FROM outbox WHERE kind='event_reminder'")).rows[0].count,'1');
+ await e.pool.query("UPDATE bookings SET status='cancelled' WHERE id=$1",[b.id]);await q.drain();
+ assert.equal(sent.length,0);assert.equal((await e.pool.query("SELECT status FROM outbox WHERE kind='event_reminder'")).rows[0].status,'skipped');
+});
+test('stale reminder is suppressed when event start changes',async()=>{
+ const {b,t}=await hold();await paid(b,t);const q=queue({send:async()=> 'provider-4'});
+ now=new Date('2030-01-03T12:00Z');await q.reminders();
+ await e.pool.query("UPDATE bookings SET start_at=start_at+interval '1 hour' WHERE id=$1",[b.id]);await q.drain();
+ assert.equal((await e.pool.query("SELECT status FROM outbox WHERE kind='event_reminder'")).rows[0].status,'skipped');
+});
 test('two independent concurrent checkouts cannot hold the same space',async()=>{
   const a=await prepare(),b=await prepare();
   const results=await Promise.allSettled([e.hold(a.request,a.key),e.hold(b.request,b.key)]);
