@@ -17,7 +17,7 @@ const config:SpaceConfig={baseSatang:120000,otSatang:150000,maxHours:12,slotMinu
 const input={spaceId:'studio',startLocal:'2030-01-04T18:00',hours:2,guests:5,services:[] as {id:string;quantity:number}[]};
 before(async()=>{
   const db=await startTestDatabase();stop=db.stop;
-  const pool=db.pool??database(db.url!).pool;e=new VenueEngine(pool,()=>now);
+  const pool=db.pool??database(db.url!).pool;e=new VenueEngine(pool,()=>now,'test-quote-secret-for-isolated-database-only');
   await pool.query(await readFile(new URL('../db/001_engine.sql',import.meta.url),'utf8'));
   await pool.query(await readFile(new URL('../db/002_admin.sql',import.meta.url),'utf8'));
 });
@@ -31,7 +31,7 @@ function token(){return randomBytes(32).toString('hex');}
 async function prepare(selection=input,t=token(),key=randomUUID()){
   const preview=await e.preview(selection);
   const request={...selection,customer:{name:'Test customer',email:'test@example.com',phone:'+66123456789',eventType:'test'},
-    acceptedPolicyVersion:'test-1',quoteDigest:preview.quoteDigest,accessToken:t};
+    acceptedPolicyVersion:'test-1',quoteDigest:preview.quoteDigest,quoteToken:preview.quoteToken,accessToken:t};
   return {request,t,key};
 }
 async function hold(selection=input){const p=await prepare(selection);return {...p,b:await e.hold(p.request,p.key)};}
@@ -80,6 +80,25 @@ test('idempotent hold and checkout are reused and changed inputs rejected',async
   const k=randomUUID(),a=await e.checkout(b.id,t,null,k,'http://localhost:5173');
   assert.deepEqual(await e.checkout(b.id,t,null,k,'http://localhost:5173'),a);
   assert.equal((await e.checkout(b.id,t,null,randomUUID(),'http://localhost:5173')).paymentId,a.paymentId);
+});
+test('expired quote cannot create a hold or reserve capacity',async()=>{
+  const p=await prepare();now=new Date(now.getTime()+15*60000);
+  await assert.rejects(()=>e.hold(p.request,p.key),/quote_expired/);
+  assert.equal((await e.pool.query('SELECT count(*) FROM bookings')).rows[0].count,'0');
+  assert.equal((await e.pool.query('SELECT count(*) FROM allocations')).rows[0].count,'0');
+});
+test('quote signature cannot be forged even with the correct current price digest',async()=>{
+  const p=await prepare();const [payload,signature]=p.request.quoteToken.split('.');
+  p.request.quoteToken=payload+'.'+(signature[0]==='A'?'B':'A')+signature.slice(1);
+  await assert.rejects(()=>e.hold(p.request,p.key),/invalid_quote/);
+  assert.equal((await e.pool.query('SELECT count(*) FROM bookings')).rows[0].count,'0');
+});
+test('interrupted hold retry returns its existing result after quote expiration',async()=>{
+  const p=await prepare(),b=await e.hold(p.request,p.key);
+  now=new Date(now.getTime()+16*60000);
+  assert.equal((await e.hold(p.request,p.key)).id,b.id);
+  assert.equal((await e.pool.query('SELECT count(*) FROM bookings')).rows[0].count,'1');
+  await assert.rejects(()=>e.hold(p.request,randomUUID()),/quote_expired/);
 });
 test('shared concierge across spaces has one winner; failed hold rolls back all resources',async()=>{
   await concierge();

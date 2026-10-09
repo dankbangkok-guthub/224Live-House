@@ -4,7 +4,7 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 export default defineConfig(({mode}) => {
   const values=loadEnv(mode,process.cwd(),'');
   // Server environment only. Never expose DATABASE_URL or tokens through VITE_ variables.
-  for(const name of ['DATABASE_URL','APP_ORIGIN','PAYMENT_MODE','ADMIN_API_TOKEN','SANDBOX_WEBHOOK_SECRET'])
+  for(const name of ['DATABASE_URL','DATABASE_DRIVER','APP_ORIGIN','PAYMENT_MODE','ADMIN_API_TOKEN','SANDBOX_WEBHOOK_SECRET','QUOTE_SIGNING_SECRET','QUOTE_TTL_MINUTES'])
     if(values[name] && !process.env[name]) process.env[name]=values[name];
   return {
     plugins:[

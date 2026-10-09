@@ -32,6 +32,6 @@ The database is provisioned; the deployed Worker is not yet connected. Set these
 
 The Neon WebSocket adapter supports the engine's interactive transactions. Each API request creates and closes its own pool, as required by Cloudflare Workers. Native `pg` remains the default for local PostgreSQL and migration tooling; use `DATABASE_DRIVER=pg` there. The runtime account is intentionally not a migration account.
 
-The first owner email still needs explicit confirmation. Follow [admin activation](ADMIN_ACTIVATION.md) to configure Cloudflare Access and MFA before opening live editing. Customer checkout remains closed until a real hosted payment provider is integrated.
+The first owner account was provisioned after explicit user confirmation; identity binding happens only after verified Access login. Follow [admin activation](ADMIN_ACTIVATION.md) to configure Cloudflare Access and MFA before opening live editing. Customer checkout remains closed until a real hosted payment provider is integrated. Customer quotes also require the server-only `QUOTE_SIGNING_SECRET` (at least 32 random characters) and optional `QUOTE_TTL_MINUTES` (default 15, range 1–30).
 
 Reference: [Neon connection choices](https://neon.com/docs/connect/choose-connection).

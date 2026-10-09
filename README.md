@@ -81,6 +81,10 @@ Browser mutations require application Origin and application/json. Holds/checkou
 
 No quote reserves capacity. Holding is the authoritative revalidation step. Catalog edits change quote digests and invalidate old unpaid selections.
 
+Quotes include a signed `quoteToken` and `quoteExpiresAt`. Hold requests must include the token and original digest. Set a server-only `QUOTE_SIGNING_SECRET` with at least 32 random characters before enabling customer quotes; `QUOTE_TTL_MINUTES` defaults to 15 and accepts 1–30 whole minutes. Signing fails closed without the secret. An existing idempotent hold retry returns its original result even if the quote later expires; a new hold requires a valid unexpired quote.
+
+`/booking/{id}` displays server-verified status after checkout, polls pending booking/extension states for up to two minutes, and resumes only existing pending payment links whose holds have not expired. It uses the existing HttpOnly booking cookie, never a URL access token. Manual-review states tell customers to avoid another payment. The sandbox return now targets this screen. Live-provider returns can target it once that provider is integrated; production customer APIs remain disabled.
+
 ## Verification
 
 - npm run typecheck

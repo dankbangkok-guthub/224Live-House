@@ -14,7 +14,10 @@ export default function Page() {
   const [catalog,setCatalog]=useState<any>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [spaceId,setSpace]=useState(''),[date,setDate]=useState(''),[time,setTime]=useState('18:00');
   const [hours,setHours]=useState(2),[guests,setGuests]=useState(1),[selected,setSelected]=useState<Record<string,number>>({});
-  const [quoted,setQuote]=useState<{quote:Quote;quoteDigest:string}|null>(null),[accepted,setAccepted]=useState(false);
+  const [quoted,setQuote]=useState<{quote:Quote;quoteDigest:string;quoteToken:string;quoteExpiresAt:string}|null>(null),[accepted,setAccepted]=useState(false);
+  const [clock,setClock]=useState(0);
+  useEffect(()=>{const timer=setInterval(()=>setClock(Date.now()),1000);return()=>clearInterval(timer);},[]);
+  const quoteExpired=!!quoted&&clock>=Date.parse(quoted.quoteExpiresAt);
   const [customer,setCustomer]=useState({name:'',email:'',phone:'',eventType:'Private event',notes:''});
   const [booking,setBooking]=useState<any>(null),[extensionHours,setExtensionHours]=useState(1),[manageId,setManageId]=useState('');
   const revision=useRef(0),holdAttempt=useRef<{key:string;token:string;input:any}|null>(null);
@@ -29,17 +32,17 @@ export default function Page() {
     }catch(e){setError((e as Error).message);}finally{setBusy(false);}
   }
   async function pay(){
-    if(!quoted || !accepted)return;
+    if(!quoted || !accepted || (quoteExpired&&!holdAttempt.current))return;
     setBusy(true);setError('');
     try{
       holdAttempt.current??={key:crypto.randomUUID(),token:newToken(),input:{spaceId,startLocal:date+'T'+time,hours,guests,
         services:Object.entries(selected).filter(([,quantity])=>quantity>0).map(([id,quantity])=>({id,quantity})),
-        customer,acceptedPolicyVersion:quoted.quote.policyVersion,quoteDigest:quoted.quoteDigest}};
+        customer,acceptedPolicyVersion:quoted.quote.policyVersion,quoteDigest:quoted.quoteDigest,quoteToken:quoted.quoteToken}};
       const attempt=holdAttempt.current;
       const b=await call('/api/bookings/holds',{...attempt.input,accessToken:attempt.token},attempt.key);
       const p=await call('/api/bookings/'+b.id+'/checkout',{},'checkout-'+attempt.key);
       window.location.assign(p.checkoutUrl);
-    }catch(e){setError((e as Error).message);}finally{setBusy(false);}
+    }catch(e){const message=(e as Error).message;setError(message);if(['quote expired','quote changed','invalid quote'].includes(message))invalidate();}finally{setBusy(false);}
   }
   async function manage(id:string){
     setBusy(true);setError('');
@@ -91,7 +94,8 @@ export default function Page() {
           {quoted.quote.items.map((item,i)=><div className="line" key={i}><span>{item.description}</span><strong>{money(item.totalSatang)}</strong></div>)}
           <div className="line total"><span>Total</span><strong>{money(quoted.quote.totalSatang)}</strong></div>
           <p className="rules">{quoted.quote.rules}</p><label className="agree"><input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)}/>I accept the displayed rules and payment/cancellation terms ({quoted.quote.policyVersion}).</label>
-          <button className="primary" onClick={pay} disabled={busy||!accepted}>Continue to sandbox payment</button><small>Availability is reserved only when checkout starts.</small></>:
+          <p role="status">{quoteExpired?'Quote expired. Check availability & price again.':'Quote valid until '+new Date(quoted.quoteExpiresAt).toLocaleTimeString('en-GB',{timeZone:'Asia/Bangkok'})+' Bangkok time.'}</p>
+          <button className="primary" onClick={pay} disabled={busy||!accepted||(quoteExpired&&!holdAttempt.current)}>Continue to sandbox payment</button><small>Availability is reserved only when checkout starts.</small></>:
           <p>Choose your time and services, then check your itemized quote.</p>}</aside></div>}
       <section id="manage" className="panel"><h2>My booking</h2><p>Booking access is stored securely in this browser for seven days. Recovery by email is not configured yet.</p>
         <div className="row"><label>Booking ID<input value={manageId} onChange={e=>setManageId(e.target.value)}/></label><button disabled={busy||!manageId} onClick={()=>manage(manageId)}>View booking</button></div>

@@ -1,6 +1,7 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { transaction } from './database';
+import { issueQuote, verifyQuote } from './quotes';
 import { DomainError, integer, localInstant, localText, MINUTE, quote, scheduleContains, validateSchedule, validateService, validateSpace,
   type Quote, type RequestInput, type Schedule, type Service, type ServiceConfig, type Space, type SpaceConfig } from './domain';
 
@@ -37,7 +38,7 @@ async function idem<T>(db: PoolClient, scope: string, key: string, input: unknow
   return result;
 }
 type Customer = { name: string; email: string; phone: string; eventType: string; notes?: string };
-type HoldInput = RequestInput & {customer: Customer; acceptedPolicyVersion: string; quoteDigest: string; accessToken: string};
+type HoldInput = RequestInput & {customer: Customer; acceptedPolicyVersion: string; quoteDigest: string; quoteToken:string; accessToken: string};
 function validateCustomer(c: Customer) {
   if (!c || typeof c.name!=='string' || c.name.trim().length<2 || c.name.length>120
     || typeof c.email!=='string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email) || c.email.length>254
@@ -56,7 +57,7 @@ async function notify(db: PoolClient, bookingId: string, key: string, kind: stri
 }
 
 export class VenueEngine {
-  constructor(public pool: Pool, private clock=()=>new Date()) {}
+  constructor(public pool: Pool, private clock=()=>new Date(),private quoteSecret=process.env.QUOTE_SIGNING_SECRET??'') {}
   private async catalog(db: PoolClient, input: RequestInput, locked=false): Promise<{space:Space;services:Service[]}> {
     const space=(await db.query('SELECT * FROM spaces WHERE id=$1 AND published=true'+(locked?' FOR SHARE':''),[input.spaceId])).rows[0];
     if (!space) throw new DomainError('space_unavailable',404);
@@ -76,7 +77,7 @@ export class VenueEngine {
       const {space,services}=await this.catalog(db,input);
       const q=quote(space,services,input,this.clock());
       await this.checkResources(db,q);
-      return {quote:q,quoteDigest:digest(q)};
+      return {quote:q,quoteDigest:digest(q),...issueQuote(digest(q),this.quoteSecret,this.clock(),Number(process.env.QUOTE_TTL_MINUTES??15))};
     } finally {db.release();}
   }
   private requirements(q: Quote) {
@@ -127,6 +128,7 @@ export class VenueEngine {
       const {space,services}=await this.catalog(db,input,true);
       const q=quote(space,services,input,this.clock());
       if (digest(q)!==input.quoteDigest) throw new DomainError('quote_changed');
+      verifyQuote(input.quoteToken,digest(q),this.quoteSecret,this.clock());
       if (q.policyVersion!==input.acceptedPolicyVersion) throw new DomainError('policy_not_accepted',400);
       const id=randomUUID(), code='224-'+id.slice(0,8).toUpperCase();
       const expires=new Date(this.clock().getTime()+space.config.holdMinutes*MINUTE).toISOString();

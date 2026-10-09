@@ -12,7 +12,7 @@
 | 6 | Pending extensions, separate sandbox payment, promotion and rollback | Production provider/pay-later operations and owner policy |
 | 7 | Initial responsive customer UI and CI workflow | MFA admin, full operations UI, mobile QA and deployment |
 
-Local verification: 41 functional/domain/database/auth tests pass, TypeScript passes, and Vinext production build passes.
+Local verification: 48 functional/domain/database/auth tests pass, TypeScript passes, and Vinext production build passes.
 
 Local database tests use embedded PostgreSQL with serialized transactions. All 26 tests also passed on native PostgreSQL 17 in GitHub CI run 37898186888, including concurrent checkout/resource and webhook/expiry races. Browser/mobile runtime tests have not been completed.
 
@@ -37,3 +37,9 @@ Added migration `002_admin`, first-owner provisioning, server-verified Access JW
 Created a Singapore PostgreSQL 17 Neon project with production and development branches. Both contain all 16 tables, both numbered migrations and `btree_gist`. Development SQL checks verified exclusion protection for space, inventory and concierge units and rolled back their test fixtures. Production has no bookings, spaces or admin accounts. A restricted `venue_app` role has explicit runtime privileges and cannot rewrite audit history or create schemas/databases/roles.
 
 Added an optional Neon WebSocket driver for Cloudflare interactive transactions and request-scoped pool cleanup. Native `pg` remains the default for local and CI databases. All 41 local tests, TypeScript and the Cloudflare build pass. Worker runtime secrets, confirmed owner login and Access MFA policy remain to connect; no live editing or customer checkout has been enabled. See [Neon setup](NEON_SETUP.md).
+
+## Phase 3 quote and payment recovery slice
+
+After explicit approval the first owner account was provisioned; Cloudflare Access identity binding and MFA configuration remain pending. Added HMAC-signed expiring quote tokens, server expiry validation, quote invalidation UI, and `/booking/{id}` payment-return status with bounded polling, existing-link recovery, exception guidance and separate pending-extension display. Redirect query parameters cannot confirm a booking. Interrupted hold retries retain their original idempotent result after quote expiry; new requests cannot use expired or altered tokens.
+
+All 48 local tests, TypeScript and Cloudflare production build pass. `QUOTE_SIGNING_SECRET` must be installed before customer quotes can run. This completes the quote/recovery slice; a live provider, reconciliation/refunds, reminder/email delivery, signed media uploads and full mobile runtime QA remain outstanding. Production payment/admin activation gates remain enforced.
