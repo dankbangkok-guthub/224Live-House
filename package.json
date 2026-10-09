@@ -13,7 +13,13 @@
     "test": "node --import tsx --test tests/*.test.ts",
     "db:migrate": "node --import tsx scripts/migrate.ts",
     "db:demo": "node --import tsx scripts/demo.ts",
-    "db:expire": "node --import tsx scripts/expire.ts"
+    "db:expire": "node --import tsx scripts/expire.ts",
+    "dev:vinext": "CLOUDFLARE_BUILD=1 vite dev --port 3001",
+    "build:vinext": "CLOUDFLARE_BUILD=1 vite build",
+    "start:vinext": "wrangler dev --config dist/server/wrangler.json",
+    "deploy:vinext": "npm run build:cloudflare && wrangler deploy --config dist/server/wrangler.json",
+    "build:cloudflare": "CLOUDFLARE_BUILD=1 vite build",
+    "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy --config dist/server/wrangler.json"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
@@ -22,7 +28,8 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-server-dom-webpack": "^19.2.8",
-    "vinext": "^1.1.0"
+    "vinext": "^1.1.0",
+    "@vinext/cloudflare": "latest"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
@@ -34,6 +41,8 @@
     "@vitejs/plugin-rsc": "^0.5.26",
     "tsx": "4.20.6",
     "typescript": "5.9.3",
-    "vite": "^8.3.4"
+    "vite": "^8.3.4",
+    "@cloudflare/vite-plugin": "1",
+    "wrangler": "latest"
   }
 }

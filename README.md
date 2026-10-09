@@ -105,3 +105,7 @@ GitHub CI runs the same suite with independent connections to a PostgreSQL 17 se
 No Cloudflare worker, database account or live site has been provisioned by this commit. The UI currently uses generated service placeholders until genuine images are supplied.
 
 See docs/SPACE_BOOKING_IMPLEMENTATION_PLAN.md and docs/VENUE_ENGINE_PHASED_BUILD.md for the full product scope.
+
+## Separate Cloudflare site
+
+Worker target: `224-live-house`. See [Cloudflare deployment](docs/CLOUDFLARE_DEPLOYMENT.md) for publishing instructions. `npm run build:cloudflare` creates the Worker bundle. The initial public deployment keeps real booking/payment APIs disabled pending production configuration.

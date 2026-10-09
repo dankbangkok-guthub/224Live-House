@@ -62,7 +62,7 @@ export default function Page() {
       <p>Your private gathering, creative session or celebration. Choose your time, then make it yours.</p>
       <div className="tags"><span>2 hours minimum</span><span>Private space</span><span>Optional concierge</span></div></section>
       {error&&<div role="alert" className="error">{error}</div>}
-      {!catalog?<p>Loading venue settings…</p>:!catalog.spaces.length?<div className="panel"><h2>Venue setup is pending</h2><p>The owner must configure rates, opening hours and policies before booking is available.</p></div>:
+      {!catalog?(error?<div className="panel"><h2>Booking opens soon</h2><p>Venue settings and secure payments are being configured. Online reservations are currently unavailable.</p></div>:<p>Loading venue settings…</p>):!catalog.spaces.length?<div className="panel"><h2>Venue setup is pending</h2><p>The owner must configure rates, opening hours and policies before booking is available.</p></div>:
       <div className="columns"><div>
         <section className="panel"><h2><b>01</b> Your date & time</h2>
           {catalog.spaces.length>1&&<label>Space<select value={spaceId} onChange={e=>{invalidate();setSpace(e.target.value);}}>{catalog.spaces.map((s:any)=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label>}
