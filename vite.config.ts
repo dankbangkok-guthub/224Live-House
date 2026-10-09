@@ -9,12 +9,12 @@ export default defineConfig(({mode}) => {
   return {
     plugins:[
       vinext(),
-      ...(process.env.CLOUDFLARE_BUILD==='1' ? [cloudflare({
+      cloudflare({
         viteEnvironment: {
           name: "rsc",
           childEnvironments: ["ssr"],
         },
-      })] : []),
+      }),
     ]
   };
 });
