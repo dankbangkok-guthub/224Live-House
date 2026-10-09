@@ -10,5 +10,6 @@
     "directory": "dist/client",
     "not_found_handling": "none",
     "binding": "ASSETS"
-  }
+  },
+  "workers_dev": true
 }
