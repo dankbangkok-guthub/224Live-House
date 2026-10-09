@@ -214,7 +214,7 @@ export class VenueEngine {
         originalEnd:new Date(b.end_at).toISOString(),proposedEnd:proposed.toISOString()};
       await db.query(`INSERT INTO extensions(id,booking_id,original_end,proposed_end,status,hold_expires_at,quote,original_allocations)
         VALUES($1,$2,$3,$4,'holding',$5,$6,$7)`,
-        [extensionId,id,b.end_at,proposed,expires,q,allocations.map(a=>({id:a.id,end:new Date(a.end_at).toISOString()}))]);
+        [extensionId,id,b.end_at,proposed,expires,q,JSON.stringify(allocations.map(a=>({id:a.id,end:new Date(a.end_at).toISOString()})))]);
       for (const a of allocations) {
         await db.query('UPDATE allocations SET end_at=$1,extension_id=$2 WHERE id=$3',
           [new Date(new Date(a.end_at).getTime()+hours*60*MINUTE),extensionId,a.id]);
