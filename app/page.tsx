@@ -91,7 +91,6 @@ export default function Page() {
       {step===1&&<form className="panel search-card" onSubmit={search}>
         <h1 ref={stepHeading} tabIndex={-1}>Book your private space</h1>
         <div className="search-fields">
-          <label>Space{catalog.spaces.length>1?<select value={spaceId} onChange={e=>{invalidate();setSpace(e.target.value);setHours(2);setSelected({});}}>{catalog.spaces.map((s:any)=><option key={s.id} value={s.id}>{s.name}</option>)}</select>:<input value="224 Live House" readOnly/>}</label>
           <BookingCalendar value={date} maxDays={space.config.horizonDays} sample={demo} hasTimes={demo?(day)=>previewStartTimes(selection,day).length>0:undefined} onChange={day=>{invalidate();setDate(day);if(demo){const valid=previewStartTimes(selection,day);if(!valid.includes(time))setTime(valid[0]??'');}}}/>
           <label>Start time{demo?<select required value={time} onChange={e=>{invalidate();setTime(e.target.value);}}><option value="" disabled>Select time</option>{!sampleTimes.includes(time)&&<option value={time} disabled>{time} — unavailable</option>}{sampleTimes.map(t=><option key={t} value={t}>{t}</option>)}</select>:<input required type="time" step={space.config.slotMinutes*60} value={time} onChange={e=>{invalidate();setTime(e.target.value);}}/>}</label>
           <label>Duration<select value={hours} onChange={e=>{invalidate();setHours(Number(e.target.value));}}>{Array.from({length:space.config.maxHours-1},(_,i)=>i+2).map(h=><option key={h} value={h}>{h} hours{h===2?' · minimum':''}</option>)}</select></label>
