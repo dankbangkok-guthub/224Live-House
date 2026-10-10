@@ -88,7 +88,6 @@ export default function Page() {
       {step>1&&<nav aria-label="Booking progress" className="booking-progress"><ol>{['Search','Services & details','Review & payment'].map((label,index)=><li key={label} aria-current={step===index+1?'step':undefined}><span>{index+1}</span>{label}</li>)}</ol></nav>}
       {!catalog?<section className="panel search-card"><h1 ref={stepHeading} tabIndex={-1}>Book your private space</h1><p role="status">{error?'Unable to load venue settings. Please refresh to try again.':'Loading search…'}</p></section>:!space?<section className="panel"><h1>Venue setup pending</h1><p>No bookable spaces are published yet.</p></section>:<>
       {step===1&&<form className="panel search-card" onSubmit={search}>
-        <div className="search-card-title"><span className="search-tab">Private space</span><span>224 Live House</span></div>
         <h1 ref={stepHeading} tabIndex={-1}>Book your private space</h1>
         <div className="search-fields">
           <label>Space{catalog.spaces.length>1?<select value={spaceId} onChange={e=>{invalidate();setSpace(e.target.value);setHours(2);setSelected({});}}>{catalog.spaces.map((s:any)=><option key={s.id} value={s.id}>{s.name}</option>)}</select>:<input value="224 Live House" readOnly/>}</label>
@@ -98,7 +97,6 @@ export default function Page() {
           <label>Guests<input required type="number" min="1" max={space.capacity} value={guests} onChange={e=>{invalidate();setGuests(Number(e.target.value));}}/></label>
           <button className="primary search-action" disabled={busy||!date||!time||(demo&&!sampleQuote)}>{busy?'Searching…':'Search availability'}<span aria-hidden="true"> →</span></button>
         </div>
-        <div className="search-footnote"><span>2 hours minimum · Bangkok time</span>{demo&&<span>Preview only · Sample rates · No real reservation or payment</span>}</div>
         {demo&&!sampleQuote&&<p role="status">Choose a time and duration within the sample opening hours, 10:00–02:00, including 30-minute setup and cleanup buffers.</p>}
       </form>}
       {step===2&&<form id="event-details" onSubmit={review}>
